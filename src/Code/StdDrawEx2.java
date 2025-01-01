@@ -1481,6 +1481,7 @@ public final class StdDrawEx2 implements ActionListener, MouseListener, MouseMot
 		return ans;
 	}
 
+
 	/**
 	 * Write the given text string in the current font, left-aligned at (<em>x</em>, <em>y</em>).
 	 * @param  x the <em>x</em>-coordinate of the text

@@ -1,7 +1,7 @@
 package Code;
 // Add your documentation below:
 
-public class SCell implements Cell {
+public class  SCell implements Cell {
     private String line;
     private int type;
     // Add your code here
