@@ -1,6 +1,8 @@
 package Code;
 
 import java.util.regex.*;
+import net.objecthunter.exp4j.Expression;
+import net.objecthunter.exp4j.ExpressionBuilder;
 
 // Define CellMath Class
 class CellMath {
@@ -11,6 +13,9 @@ class CellMath {
     }
 
     public boolean isNumber(String text) {
+        if (text == null || text.isEmpty()) {
+            return false;
+        }
         return text.matches("-?\\d+(\\.\\d+)?");
     }
 
@@ -19,19 +24,32 @@ class CellMath {
     }
 
     public boolean isForm(String text) {
-        return text.startsWith("=") && isValidForm(text.substring(1));
+        return text != null && text.startsWith("=") && isValidForm(text.substring(1));
     }
 
     private boolean isValidForm(String text) {
-        // Validate formula structure (e.g., balanced parentheses, valid characters)
         int openParens = 0;
         for (char ch : text.toCharArray()) {
             if (ch == '(') openParens++;
             else if (ch == ')') openParens--;
             if (openParens < 0) return false; // Unbalanced parentheses
         }
-        return openParens == 0 && text.matches("[0-9+\\-*/().A-Z]*"); // Valid characters
+
+        try {
+            // Match either a valid math expression or a cell reference
+            if (openParens == 0 && (text.matches("[0-9+\\-*/().A-Z]*") || text.matches("[A-Z][0-9]+"))) {
+                // Optionally validate using Exp4j for math expressions
+                if (!text.matches("[A-Z][0-9]+")) {
+                    new ExpressionBuilder(text).build(); // Validate math expression
+                }
+                return true; // Valid formula or cell reference
+            }
+            return false;
+        } catch (Exception e) {
+            return false; // Invalid formula syntax
+        }
     }
+
 
     public Double computeForm(String form, Spreadsheet sheet) {
         if (!isForm(form)) {
@@ -54,10 +72,10 @@ class CellMath {
         }
 
         try {
-            javax.script.ScriptEngine engine = new javax.script.ScriptEngineManager().getEngineByName("JavaScript");
-            return ((Number) engine.eval(expression)).doubleValue();
+            Expression exp = new ExpressionBuilder(expression).build();
+            return exp.evaluate();
         } catch (Exception e) {
-            throw new RuntimeException("Error evaluating formula");
+            throw new RuntimeException("Error evaluating formula: " + form, e);
         }
     }
 
@@ -73,6 +91,11 @@ class Spreadsheet {
 
     public Spreadsheet(int x, int y) {
         cells = new CellMath[x][y];
+        for (int i = 0; i < x; i++) {
+            for (int j = 0; j < y; j++) {
+                cells[i][j] = new CellMath(""); // Initialize cells
+            }
+        }
     }
 
     public CellMath get(int x, int y) {
@@ -101,19 +124,26 @@ class Spreadsheet {
     }
 
     public int yCell(String c) {
-        String rowPart = c.replaceAll("[A-Z]", "");
-        return Integer.parseInt(rowPart);
+        try {
+            String rowPart = c.replaceAll("[A-Z]", "");
+            return Integer.parseInt(rowPart) - 1; // Convert to zero-based index
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     public String eval(int x, int y) {
         CellMath cell = get(x, y);
-        if (cell == null) return "";
+        if (cell == null) return "null"; // Return empty for null cells
 
         String content = cell.getContent();
+        if (content.isEmpty()) {
+            return "null"; // Return empty for uninitialized cells
+        }
         if (cell.isNumber(content)) {
-            return content;
+            return content; // Return the number as a string
         } else if (cell.isText(content)) {
-            return "ERR";
+            return content; // Return the text content directly
         } else if (cell.isForm(content)) {
             if (computeDepth(x, y, new boolean[width()][height()]) == -1) {
                 return "ERR"; // Cycle detected
@@ -121,12 +151,14 @@ class Spreadsheet {
             try {
                 return String.valueOf(cell.computeForm(content, this));
             } catch (Exception e) {
-                return "ERR";
+                return "ERR"; // Formula evaluation error
             }
         } else {
-            return "";
+            return ""; // Default case for unexpected content
         }
     }
+
+
 
     public String[][] evalAll() {
         int w = width();
@@ -136,19 +168,6 @@ class Spreadsheet {
         for (int i = 0; i < w; i++) {
             for (int j = 0; j < h; j++) {
                 result[i][j] = eval(i, j);
-            }
-        }
-        return result;
-    }
-
-    public int[][] depth() {
-        int w = width();
-        int h = height();
-        int[][] result = new int[w][h];
-
-        for (int i = 0; i < w; i++) {
-            for (int j = 0; j < h; j++) {
-                result[i][j] = computeDepth(i, j, new boolean[w][h]);
             }
         }
         return result;
@@ -164,10 +183,9 @@ class Spreadsheet {
             return 0;
         } else if (cell.isForm(cell.getContent())) {
             visited[x][y] = true;
-            String content = cell.getContent().substring(1); // Extract formula
+            String content = cell.getContent().substring(1);
             int maxDepth = 0;
 
-            // Simple dependency parsing: assume dependencies are cell references (e.g., A3)
             Matcher matcher = Pattern.compile("[A-Z][0-9]+").matcher(content);
             while (matcher.find()) {
                 String ref = matcher.group();
@@ -183,46 +201,33 @@ class Spreadsheet {
             return 0;
         }
     }
+
+    public void printSheet() {
+        String[][] allValues = evalAll();
+        for (String[] row : allValues) {
+            for (String value : row) {
+                System.out.print((value == null || value.isEmpty() ? " " : value) + "\t");
+            }
+            System.out.println();
+        }
+    }
+
 }
 
 // Example usage
 public class Main {
     public static void main(String[] args) {
-        Spreadsheet sheet = new Spreadsheet(9, 17);
+        Spreadsheet sheet = new Spreadsheet(9, 9);
 
         // Setting up cells
-        sheet.set(0, 6, new CellMath("=A3")); // A6
-        sheet.set(0, 3, new CellMath("=A6")); // A3
+        sheet.set(0, 5, new CellMath("=A4")); // A6
+        sheet.set(0, 3, new CellMath("=A6")); // A4
+        sheet.set(0, 0, new CellMath("5"));   // A1
+        sheet.set(1, 0, new CellMath("Hello")); // B1
+        sheet.set(0, 1, new CellMath("=5+6*5")); // A2
+        sheet.set(1, 1, new CellMath("=A1+10")); // B2
+        sheet.set(2, 2, new CellMath("=B1")); // C3
 
-        // Test examples
-        sheet.set(0, 0, new CellMath("5")); // A0
-        sheet.set(1, 0, new CellMath("Hello")); // B0
-        sheet.set(0, 1, new CellMath("=5+6*5")); // A1
-        sheet.set(1, 1, new CellMath("=A0+10")); // B1
-        sheet.set(2, 2, new CellMath("=B0")); // C2 (invalid reference to text cell)
-
-        System.out.println("Eval (A6): " + sheet.eval(0, 6)); // Cycle error
-        System.out.println("Eval (A3): " + sheet.eval(0, 3)); // Cycle error
-        System.out.println("Eval (A0): " + sheet.eval(0, 0)); // "5"
-        System.out.println("Eval (B0): " + sheet.eval(1, 0)); // "ERR"
-        System.out.println("Eval (A1): " + sheet.eval(0, 1)); // "35.0"
-        System.out.println("Eval (B1): " + sheet.eval(1, 1)); // "15.0"
-        System.out.println("Eval (C2): " + sheet.eval(2, 2)); // "ERR"
-
-        String[][] allValues = sheet.evalAll();
-        for (String[] row : allValues) {
-            for (String value : row) {
-                System.out.print(value + " ");
-            }
-            System.out.println();
-        }
-
-        int[][] depths = sheet.depth();
-        for (int[] row : depths) {
-            for (int value : row) {
-                System.out.print(value + " ");
-            }
-            System.out.println();
-        }
+        sheet.printSheet();
     }
 }
