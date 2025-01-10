@@ -11,6 +11,16 @@ public class SCell implements Cell {
     private int type;
     private int order;
     private Map<String, Double> variables;
+    private boolean visited = false;
+
+    public boolean isVisited() {
+        return visited;
+    }
+
+    public void setVisited(boolean visited) {
+        this.visited = visited;
+    }
+
 
     public SCell(String s) {
         setData(s);
@@ -47,6 +57,7 @@ public class SCell implements Cell {
         }
     }
 
+
     @Override
     public String getData() {
         return line;
@@ -66,38 +77,41 @@ public class SCell implements Cell {
         if (type == Ex2Utils.NUMBER) {
             return Double.parseDouble(line);
         } else if (type == Ex2Utils.FORM) {
-            String formula = line.substring(1);
-            variables.clear();
+            try {
+                String formula = line.substring(1);
+                formula = formula.toUpperCase();
+                variables.clear();
 
-            // Extract cell references and replace them in the formula
-            for (String var : formula.split("[^A-Za-z0-9]")) {
-                if (var.matches("[A-Za-z]+[0-9]+")) {
-                    int[] cellCoordinates = sheet.cellCoordinates(var);
-                    if (sheet.isIn(cellCoordinates[0], cellCoordinates[1])) {
-                        String cellValue = sheet.eval(cellCoordinates[0], cellCoordinates[1]);
-                        try {
-                            variables.put(var, Double.parseDouble(cellValue));
-                        } catch (NumberFormatException e) {
-                            throw new IllegalArgumentException("Referenced cell is not a number: " + var);
+                for (String var : formula.split("[^A-Za-z0-9]")) {
+                    if (var.matches("[A-Za-z]+[0-9]+")) {
+                        int[] coords = sheet.cellCoordinates(var);
+                        if (!sheet.isIn(coords[0], coords[1])) {
+                            scell.setType(Ex2Utils.ERR_FORM_FORMAT);
+                            throw new IllegalArgumentException("Invalid reference: " + var);
                         }
-                    } else {
-                        throw new IllegalArgumentException("Invalid cell reference: " + var);
+                        String refValue = sheet.eval(coords[0], coords[1]);
+                        if (refValue.equals(Ex2Utils.ERR_FORM)) {
+                            throw new IllegalArgumentException("Reference to an error cell: " + var);
+                        }
+
+                        variables.put(var, Double.parseDouble(refValue));
                     }
                 }
+
+                Expression expression = new ExpressionBuilder(formula)
+                        .variables(variables.keySet())
+                        .build();
+
+                variables.forEach(expression::setVariable);
+                return expression.evaluate();
+            } catch (Exception e) {
+                scell.setType(Ex2Utils.ERR_FORM_FORMAT);
+                return Ex2Utils.ERR_FORM_FORMAT;
             }
-
-            Expression expression = new ExpressionBuilder(formula)
-                    .variables(variables.keySet())
-                    .build();
-
-            for (Map.Entry<String, Double> entry : variables.entrySet()) {
-                expression.setVariable(entry.getKey(), entry.getValue());
-            }
-
-            return expression.evaluate();
         }
 
         scell.setType(Ex2Utils.ERR_FORM_FORMAT);
         return Ex2Utils.ERR_FORM_FORMAT;
     }
+
 }

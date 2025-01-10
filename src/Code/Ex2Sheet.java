@@ -1,9 +1,19 @@
 package Code;
 
 import java.io.*;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 public class Ex2Sheet implements Sheet {
     private SCell[][] table;
+    private Map<String, Set<String>> dependencies = new HashMap<>();
+
+    private String cellKey(int x, int y) {
+        return x + "," + y;
+    }
+
 
     public Ex2Sheet(int x, int y) {
         table = new SCell[x][y];
@@ -25,7 +35,11 @@ public class Ex2Sheet implements Sheet {
             String cellValue = eval(x, y);
             // Check if the value is explicitly set to "0.0"
             if (table[x][y].getType() == Ex2Utils.ERR_FORM_FORMAT){
+
                 return Ex2Utils.ERR_FORM;
+            }
+            if (table[x][y].getType() == Ex2Utils.ERR_CYCLE_FORM){
+                return Ex2Utils.ERR_CYCLE;
             }
             if ("0.0".equals(cellValue)) {
                 return "0.0";  // Explicitly show "0.0" if it's an explicit value
@@ -34,6 +48,7 @@ public class Ex2Sheet implements Sheet {
             if (cellValue.isEmpty()) {
                 return "";  // Return empty string for empty cells
             }
+
             return cellValue;  // Return the evaluated value
         }
         return Ex2Utils.EMPTY_CELL;
@@ -74,42 +89,40 @@ public class Ex2Sheet implements Sheet {
     public void eval() {
         for (int i = 0; i < width(); i++) {
             for (int j = 0; j < height(); j++) {
-                eval(i, j);
+                eval(i, j); // Evaluate each cell
             }
         }
     }
 
     @Override
     public String eval(int x, int y) {
-        if (isIn(x, y)) {
-            try {
-                String value = table[x][y].getData();
-                int type = table[x][y].getType();
+        if (!isIn(x, y)) return Ex2Utils.EMPTY_CELL;
 
-
-
-                // Check if the value is text and return it as is
-                if (type == Ex2Utils.TEXT) {
-                    return value;
-                }
-
-                // Evaluate the cell's value
-                String evaluatedValue = String.valueOf(table[x][y].evaluate(this, table[x][y]));
-
-                // If the evaluated value is 0 (or 0.0), explicitly return "0"
-                if (evaluatedValue.equals("0") || evaluatedValue.equals("0.0")) {
-                    return "0.0";
-                }
-
-                return evaluatedValue;
-
-            } catch (Exception e) {
-                table[x][y].setType(Ex2Utils.ERR_FORM_FORMAT);
-                return Ex2Utils.ERR_FORM;
-            }
+        SCell cell = table[x][y];
+        if (cell.isVisited()) {
+            // If the cell is already being evaluated, it's a cycle
+            cell.setType(Ex2Utils.ERR_CYCLE_FORM);
+            return Ex2Utils.ERR_CYCLE;
         }
-        return Ex2Utils.EMPTY_CELL;
+
+        if (cell.getType() != Ex2Utils.FORM) {
+            if (cell.getType() == Ex2Utils.NUMBER) {
+                return String.valueOf(Double.parseDouble(cell.getData())); // Return non-formula cells directly
+            }
+            return cell.getData();
+        }
+
+        try {
+            cell.setVisited(true); // Mark the cell as visited
+            double result = cell.evaluate(this, cell);
+            cell.setVisited(false); // Clear the visited state
+            return String.valueOf(result);
+        } catch (Exception e) {
+            cell.setType(Ex2Utils.ERR_FORM_FORMAT); // Set error type if evaluation fails
+            return Ex2Utils.ERR_FORM;
+        }
     }
+
 
 
 
@@ -121,33 +134,14 @@ public class Ex2Sheet implements Sheet {
     @Override
     public int[][] depth() {
         int[][] depthMatrix = new int[width()][height()];
+        boolean[][] visited = new boolean[width()][height()];
 
-        // Initialize the depth matrix with default values (0).
-        for (int i = 0; i < width(); i++) {
-            for (int j = 0; j < height(); j++) {
-                depthMatrix[i][j] = 0;  // Start with depth 0.
-            }
-        }
-
-        // Iterate through all cells and evaluate their dependencies.
         for (int x = 0; x < width(); x++) {
             for (int y = 0; y < height(); y++) {
-                // Skip empty cells or cells that already have a depth value
-                if (table[x][y].getData().isEmpty() || depthMatrix[x][y] != 0) continue;
-
-                // Call eval to check for dependencies
-                eval(x, y);  // This will evaluate the cell and compute any potential dependencies
-
-                // Mark this cell with a depth of 1 (or adjust depending on your logic)
-                depthMatrix[x][y] = 1;
-
-                // Check other cells that may reference this one (basic evaluation logic)
-                for (int i = 0; i < width(); i++) {
-                    for (int j = 0; j < height(); j++) {
-                        if (table[i][j].getData().contains("CELL(" + x + "," + y + ")")) {
-                            // Mark referencing cell's depth
-                            depthMatrix[i][j] = Math.max(depthMatrix[i][j], depthMatrix[x][y] + 1);
-                        }
+                if (!visited[x][y]) {
+                    if (!updateDepth(x, y, visited, new HashSet<>(), depthMatrix)) {
+                        // Set a special error depth if a cycle is detected
+                        depthMatrix[x][y] = Ex2Utils.ERR;
                     }
                 }
             }
@@ -155,6 +149,42 @@ public class Ex2Sheet implements Sheet {
 
         return depthMatrix;
     }
+
+    private boolean updateDepth(int x, int y, boolean[][] visited, Set<String> stack, int[][] depthMatrix) {
+        if (!isIn(x, y)) return true;
+
+        String cellId = x + "," + y;
+        if (stack.contains(cellId)) {
+            table[x][y].setType(Ex2Utils.ERR_CYCLE_FORM);
+            return false;
+        } // Cycle detected
+
+        if (visited[x][y]) {
+            return true;
+        }; // Already processed
+
+        visited[x][y] = true;
+        stack.add(cellId);
+
+        String data = table[x][y].getData();
+        if (data.startsWith("=")) {
+            for (String ref : data.substring(1).split("[^A-Za-z0-9]")) {
+                ref = ref.toUpperCase();
+                if (ref.matches("[A-Za-z]+[0-9]+")) {
+                    int[] coords = cellCoordinates(ref);
+                    if (!updateDepth(coords[0], coords[1], visited, stack, depthMatrix)) {
+                        table[x][y].setType(Ex2Utils.ERR_CYCLE_FORM);
+                        return false;
+                    }
+                    depthMatrix[x][y] = Math.max(depthMatrix[x][y], depthMatrix[coords[0]][coords[1]] + 1);
+                }
+            }
+        }
+
+        stack.remove(cellId);
+        return true;
+    }
+
 
 
 
@@ -250,4 +280,5 @@ public class Ex2Sheet implements Sheet {
         int rowIndex = Integer.parseInt(row);
         return new int[]{colIndex, rowIndex};
     }
+
 }
