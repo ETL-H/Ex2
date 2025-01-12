@@ -76,7 +76,7 @@ public class SCell implements Cell {
     public double evaluate(Ex2Sheet sheet, SCell scell) {
         if (type == Ex2Utils.NUMBER) {
             return Double.parseDouble(line);
-        } else if (type == Ex2Utils.FORM) {
+        } else if (type == Ex2Utils.FORM || type == Ex2Utils.ERR_FORM_FORMAT || type == Ex2Utils.ERR) {
             try {
                 String formula = line.substring(1);
                 formula = formula.toUpperCase();

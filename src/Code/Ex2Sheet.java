@@ -34,6 +34,10 @@ public class Ex2Sheet implements Sheet {
         if (isIn(x, y)) {
             String cellValue = eval(x, y);
             // Check if the value is explicitly set to "0.0"
+            if (table[x][y].getType() == Ex2Utils.ERR_FORM_FORMAT && !cellValue.equals("-2.0")){
+                table[x][y].setType(Ex2Utils.FORM);
+                return cellValue;
+            }
             if (table[x][y].getType() == Ex2Utils.ERR_FORM_FORMAT){
 
                 return Ex2Utils.ERR_FORM;
@@ -105,12 +109,13 @@ public class Ex2Sheet implements Sheet {
             return Ex2Utils.ERR_CYCLE;
         }
 
-        if (cell.getType() != Ex2Utils.FORM) {
-            if (cell.getType() == Ex2Utils.NUMBER) {
-                return String.valueOf(Double.parseDouble(cell.getData())); // Return non-formula cells directly
-            }
+
+        if (cell.getType() == Ex2Utils.TEXT) {
             return cell.getData();
         }
+        if (cell.getType() == Ex2Utils.NUMBER) {
+                return String.valueOf(Double.parseDouble(cell.getData())); // Return non-formula cells directly
+            }
 
         try {
             cell.setVisited(true); // Mark the cell as visited
@@ -141,7 +146,7 @@ public class Ex2Sheet implements Sheet {
                 if (!visited[x][y]) {
                     if (!updateDepth(x, y, visited, new HashSet<>(), depthMatrix)) {
                         // Set a special error depth if a cycle is detected
-                        depthMatrix[x][y] = Ex2Utils.ERR;
+                        depthMatrix[x][y] = Ex2Utils.ERR_CYCLE_FORM;
                     }
                 }
             }
@@ -152,6 +157,9 @@ public class Ex2Sheet implements Sheet {
 
     private boolean updateDepth(int x, int y, boolean[][] visited, Set<String> stack, int[][] depthMatrix) {
         if (!isIn(x, y)) return true;
+        if(table[x][y].getType() == Ex2Utils.ERR_CYCLE_FORM){
+            return false;
+        }
 
         String cellId = x + "," + y;
         if (stack.contains(cellId)) {

@@ -139,7 +139,7 @@ public class Ex2GUI {
 			else {
 				table.set(xx, yy, c);
 				int[][] calc_d = table.depth();
-				if (calc_d[xx][yy] == Ex2Utils.ERR) {
+				if (calc_d[xx][yy] == Ex2Utils.ERR_CYCLE_FORM) {
 					table.get(xx,yy).setType(Ex2Utils.ERR_CYCLE_FORM);
 				}
 			}
