@@ -35,7 +35,7 @@ public class Ex2Sheet implements Sheet {
             String cellValue = eval(x, y);
             // Check if the value is explicitly set to "0.0"
             if (table[x][y].getType() == Ex2Utils.ERR_FORM_FORMAT && !cellValue.equals("-2.0")){
-                table[x][y].setType(Ex2Utils.FORM);
+                table[x][y].setType(Ex2Utils.ERR_FORM_FORMAT);
                 return cellValue;
             }
             if (table[x][y].getType() == Ex2Utils.ERR_FORM_FORMAT){
@@ -121,6 +121,9 @@ public class Ex2Sheet implements Sheet {
             cell.setVisited(true); // Mark the cell as visited
             double result = cell.evaluate(this, cell);
             cell.setVisited(false); // Clear the visited state
+            if(cell.getType() == Ex2Utils.ERR_FORM_FORMAT){
+                throw new IOException("Invalid sheet dimensions in file.");
+            }
             return String.valueOf(result);
         } catch (Exception e) {
             cell.setType(Ex2Utils.ERR_FORM_FORMAT); // Set error type if evaluation fails

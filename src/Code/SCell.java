@@ -76,7 +76,7 @@ public class SCell implements Cell {
     public double evaluate(Ex2Sheet sheet, SCell scell) {
         if (type == Ex2Utils.NUMBER) {
             return Double.parseDouble(line);
-        } else if (type == Ex2Utils.FORM || type == Ex2Utils.ERR_FORM_FORMAT || type == Ex2Utils.ERR) {
+        } else if (type == Ex2Utils.FORM || type == Ex2Utils.ERR_FORM_FORMAT || type == Ex2Utils.ERR_CYCLE_FORM) {
             try {
                 String formula = line.substring(1);
                 formula = formula.toUpperCase();
@@ -90,8 +90,15 @@ public class SCell implements Cell {
                             throw new IllegalArgumentException("Invalid reference: " + var);
                         }
                         String refValue = sheet.eval(coords[0], coords[1]);
-                        if (refValue.equals(Ex2Utils.ERR_FORM)) {
-                            throw new IllegalArgumentException("Reference to an error cell: " + var);
+                        SCell cell = sheet.get(coords[0],coords[1]);
+                        if (cell.getType() != Ex2Utils.ERR_FORM_FORMAT && cell.getType() != Ex2Utils.ERR){
+                            scell.setType(Ex2Utils.FORM);
+                        }
+
+
+                        if (refValue.equals(Ex2Utils.ERR_CYCLE)) {
+                            scell.setType(Ex2Utils.ERR_CYCLE_FORM);
+                            return Ex2Utils.ERR_CYCLE_FORM;
                         }
 
                         variables.put(var, Double.parseDouble(refValue));
