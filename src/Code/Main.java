@@ -16,7 +16,12 @@ class CellMath {
         if (text == null || text.isEmpty()) {
             return false;
         }
-        return text.matches("-?\\d+(\\.\\d+)?");
+        try {
+            Double.parseDouble(text);
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     public boolean isText(String text) {
@@ -28,6 +33,7 @@ class CellMath {
     }
 
     private boolean isValidForm(String text) {
+        // Check for balanced parentheses
         int openParens = 0;
         for (char ch : text.toCharArray()) {
             if (ch == '(') openParens++;
@@ -35,21 +41,29 @@ class CellMath {
             if (openParens < 0) return false; // Unbalanced parentheses
         }
 
-        try {
-            // Match either a valid math expression or a cell reference
-            if (openParens == 0 && (text.matches("[0-9+\\-*/().A-Z]*") || text.matches("[A-Z][0-9]+"))) {
-                // Optionally validate using Exp4j for math expressions
-                if (!text.matches("[A-Z][0-9]+")) {
-                    new ExpressionBuilder(text).build(); // Validate math expression
-                }
-                return true; // Valid formula or cell reference
-            }
-            return false;
-        } catch (Exception e) {
-            return false; // Invalid formula syntax
-        }
-    }
+        // Parentheses must be balanced
+        if (openParens != 0) return false;
 
+        // Check if text matches either a valid math expression or a cell reference
+        String mathExpressionPattern = "[0-9+\\-*/().]*";
+        String cellReferencePattern = "[A-Z]+[0-9]+";
+
+        if (text.matches(cellReferencePattern)) {
+            return true; // Valid cell reference
+        }
+
+        if (text.matches(mathExpressionPattern)) {
+            try {
+                // Validate the math expression using Exp4j
+                new ExpressionBuilder(text).build();
+                return true;
+            } catch (Exception e) {
+                return false; // Invalid mathematical expression
+            }
+        }
+
+        return false; // Invalid form
+    }
 
     public Double computeForm(String form, Spreadsheet sheet) {
         if (!isForm(form)) {
@@ -63,11 +77,15 @@ class CellMath {
             String ref = matcher.group();
             int refX = sheet.xCell(ref);
             int refY = sheet.yCell(ref);
-            String refValue = sheet.eval(refX, refY);
+            if (refX == -1 || refY == -1) {
+                throw new RuntimeException("Invalid cell reference: " + ref);
+            }
 
+            String refValue = sheet.eval(refX, refY);
             if (refValue.equals("ERR")) {
                 throw new RuntimeException("Error in referenced cell");
             }
+
             expression = expression.replace(ref, refValue);
         }
 
@@ -78,7 +96,6 @@ class CellMath {
             throw new RuntimeException("Error evaluating formula: " + form, e);
         }
     }
-
 
     public String getContent() {
         return content;
@@ -134,16 +151,15 @@ class Spreadsheet {
 
     public String eval(int x, int y) {
         CellMath cell = get(x, y);
-        if (cell == null) return "null"; // Return empty for null cells
-
+        if (cell == null) return "null"; // Null cells
         String content = cell.getContent();
+
         if (content.isEmpty()) {
-            return "null"; // Return empty for uninitialized cells
-        }
-        if (cell.isNumber(content)) {
+            return "    "; // Empty cell
+        } else if (cell.isNumber(content)) {
             return content; // Return the number as a string
         } else if (cell.isText(content)) {
-            return content; // Return the text content directly
+            return content; // Return text content
         } else if (cell.isForm(content)) {
             if (computeDepth(x, y, new boolean[width()][height()]) == -1) {
                 return "ERR"; // Cycle detected
@@ -154,11 +170,9 @@ class Spreadsheet {
                 return "ERR"; // Formula evaluation error
             }
         } else {
-            return ""; // Default case for unexpected content
+            return "ERR"; // Unexpected content
         }
     }
-
-
 
     public String[][] evalAll() {
         int w = width();
@@ -191,11 +205,15 @@ class Spreadsheet {
                 String ref = matcher.group();
                 int refX = xCell(ref);
                 int refY = yCell(ref);
-                maxDepth = Math.max(maxDepth, computeDepth(refX, refY, visited));
+                if (refX == -1 || refY == -1) {
+                    return -1; // Invalid reference
+                }
+                int depth = computeDepth(refX, refY, visited);
+                if (depth == -1) return -1; // Cycle detected
+                maxDepth = Math.max(maxDepth, depth);
             }
 
             visited[x][y] = false;
-            if (maxDepth == -1) return -1; // Cycle propagated
             return 1 + maxDepth;
         } else {
             return 0;
@@ -204,8 +222,19 @@ class Spreadsheet {
 
     public void printSheet() {
         String[][] allValues = evalAll();
-        for (String[] row : allValues) {
-            for (String value : row) {
+
+        // Print column letters
+        System.out.print("\t"); // Offset for row numbers
+        for (int col = 0; col < allValues.length; col++) {
+            System.out.print((char) ('A' + col) + "\t");
+        }
+        System.out.println();
+
+        // Print row numbers and cell values
+        for (int row = 0; row < allValues[0].length; row++) {
+            System.out.print((row + 1) + "\t"); // Row number
+            for (int col = 0; col < allValues.length; col++) {
+                String value = allValues[col][row];
                 System.out.print((value == null || value.isEmpty() ? " " : value) + "\t");
             }
             System.out.println();
@@ -220,13 +249,13 @@ public class Main {
         Spreadsheet sheet = new Spreadsheet(9, 9);
 
         // Setting up cells
-        sheet.set(0, 5, new CellMath("=A4")); // A6
-        sheet.set(0, 3, new CellMath("=A6")); // A4
-        sheet.set(0, 0, new CellMath("5"));   // A1
+        sheet.set(0, 5, new CellMath("=A4"));  // A6
+        sheet.set(0, 3, new CellMath("=A6"));  // A4
+        sheet.set(0, 0, new CellMath("5"));    // A1
         sheet.set(1, 0, new CellMath("Hello")); // B1
         sheet.set(0, 1, new CellMath("=5+6*5")); // A2
         sheet.set(1, 1, new CellMath("=A1+10")); // B2
-        sheet.set(2, 2, new CellMath("=B1")); // C3
+        sheet.set(2, 2, new CellMath("=B1"));  // C3
 
         sheet.printSheet();
     }
